@@ -262,109 +262,34 @@ module.exports = function (app) {
             data.last_user_agent = req.headers["user-agent"]
             data.last_ip = generalLib.getIp(req)
             const body = generalLib.omit(data, 'confirmPassword')
-
             const addUser = await axios.post(config.centralUrl+'users/create', body)
-            
-            // console.log('dfxdfvsdfg', addUser)
-
             // Add activity 
             if(addUser && addUser.data.data != undefined){
-
-                // const actData = addUser.data.data
-                // actData.logined_at = generalLib.formatDateTime(actData.logined_at)
-                // actData.created_at = generalLib.formatDateTime(actData.created_at)
-                // actData.updated_at = generalLib.formatDateTime(actData.updated_at)
-                // actData.logout_at = generalLib.formatDateTime(actData.logout_at)
-                // const device = await deviceModel.get({select: 'port', filters: { 'device_id': deviceId }}) 
-                // await activityLogModel.add({
-                //     id: generalLib.generateUUID(me.port),
-                //     uid: me.id, 
-                //     ip: generalLib.getIp(req), 
-                //     port: device.port, 
-                //     record_id: data.uid,
-                //     ref_id: actData.username,
-                //     device_id: deviceId,
-                //     record_type: 'users', 
-                //     action: 'add', 
-                //     data: JSON.stringify(actData)
-                // })
-
+                const actData = addUser.data.data
+                actData.logined_at = generalLib.formatDateTime(actData.logined_at)
+                actData.created_at = generalLib.formatDateTime(actData.created_at)
+                actData.updated_at = generalLib.formatDateTime(actData.updated_at)
+                actData.logout_at = generalLib.formatDateTime(actData.logout_at)
+                const device = await deviceModel.get({select: 'port', filters: { 'device_id': deviceId }}) 
+                await activityLogModel.add({
+                    id: generalLib.generateUUID(me.port),
+                    uid: me.id, 
+                    ip: generalLib.getIp(req), 
+                    port: device.port, 
+                    record_id: data.uid,
+                    ref_id: actData.username,
+                    device_id: deviceId,
+                    record_type: 'users', 
+                    action: 'add', 
+                    data: JSON.stringify(actData)
+                })
                 return res.status(201).send({'message': 'success'})
             } 
         } catch (error) {
-            console.log(error)
-            if(error.response && error.response.status == 422) return res.status(422).send({'code': error.response.data.code , 'sql': error.response.data.sql ,'message': error.response.data.sqlMessage})
-            if(error.code == 'ECONNREFUSED') return res.status(502).send({'code': error.code ,'address': error.address, 'message': `Can not request to this address ${error.address}:${error.port}`})
-            return res.status(422).send({'code': error.code , 'sql': error.sql,'message': error.sqlMessage})
+            if(error.code == 'ECONNREFUSED') return res.status(502).send({'code': error.code ,'address': error.address, 'message': `Can not request to this address ${error.address}:${error.port}`}) // if connection to central server error.
+            if(error.response && error.response.status == 422) return res.status(422).send({'code': error.response.data.code , 'sql': error.response.data.sql ,'message': error.response.data.sqlMessage}) // if catch error while add record central server.
+            return res.status(422).send({'code': error.code , 'sql': error.sql, 'message': error.sqlMessage}) // if catch error while add record in local.
         }
-
-
-        return 
-
-
-        
-        // Check Duplicate User
-        if(result=await userModel.get({select:'username', filters: { username: data.username }})) {
-            return res.status(403).send({'code': 'invalid_username', 'type': 'users', 'message': 'Sorry! The username you provid already exist.'})
-        } 
-
-        data.uid = generalLib.generateUUID(me.port)
-        data['password'] = await passwordLib.hash(data.password);
-        data.last_user_agent = req.headers["user-agent"];
-        data.last_ip = generalLib.getIp(req);
-         
-
-        if(['sub_admin', 'staff'].includes(data.role)){
-            if(!data.port) return res.status(403).send({'message': `Port is required for role ${data.role}.`})
-        } 
-
-        // Admin
-        if(me.role=='admin'){
-            if(['super_admin'].includes(data.role)) return res.status(403).send({'message': `Role ${me.role} can not assign user ${data.role}.`})
-            if(me.port == null ){
-                if(data.role == 'admin' && data.port == undefined) return res.status(403).send({'message': `Admin has no port can assign only admin has port.`})
-            }
-            if(me.port){
-                if(['admin'].includes(data.role)) return res.status(403).send({'message': `Role ${me.role} can not assign user ${data.role}.`})
-                if(data.role == 'report' && data.port == undefined) return res.status(403).send({'message': `Admin port ${me.port} can assign only report has port ${me.port}.`})
-            }
-        }
-
-        // Sub Admin
-        if(me.role=='sub_admin'){
-            if(['super_admin', 'admin', 'sub_admin'].includes(data.role)) return res.status(403).send({'message': `Role ${data.role} can not assign by ${me.role}.`})
-            if(me.port) data.port = me.port
-        }
-     
-        const body = generalLib.omit(data, 'confirmPassword')
-
-        // Request To Createa User
-        const addUser = await axios.post(config.centralUrl+'users/create', body)
-        // Add activity 
-        if(addUser && addUser.data.data != undefined){
-            const actData = addUser.data.data
-            actData.logined_at = generalLib.formatDateTime(actData.logined_at)
-            actData.created_at = generalLib.formatDateTime(actData.created_at)
-            actData.updated_at = generalLib.formatDateTime(actData.updated_at)
-            actData.logout_at = generalLib.formatDateTime(actData.logout_at)
-            const device = await deviceModel.get({select: 'port', filters: { 'device_id': deviceId }}) 
-            await activityLogModel.add({
-                id: generalLib.generateUUID(me.port),
-                uid: me.id, 
-                ip: generalLib.getIp(req), 
-                port: device.port, 
-                record_id: data.uid,
-                ref_id: actData.username,
-                device_id: deviceId,
-                record_type: 'users', 
-                action: 'add', 
-                data: JSON.stringify(actData)
-            })
-            return res.status(201).send({'message': 'success'})
-        } 
-        const status = addUser.data.status
-        if(status == 422) return res.status(422).send({'message': addUser.data.message})
-        if(status == 403) return res.status(403).send({'message': addUser.data.message})
     })
 
     // Users Lists
@@ -518,14 +443,7 @@ module.exports = function (app) {
 
         // Not allowed update user    
         if(['report', 'staff'].includes(me.role)) return res.status(403).send({'message': `Role ${me.role} can not update a user.`})
-        // Get user
-        if(!(result=await userModel.get({select: 'username, port, role', filters: { uid: req.params.id}}))) return res.status(404).send({'message':'User not found.'})
-        
-        // Deplicate Users 
-        if(data.username != result.username){
-            if(exist= await userModel.get({filters: {'username': data.username}})) return res.status(403).send({'message':'Username already exist.'})
-        }
-        
+
         // Super Admin
         if(me.role == 'super_admin'){
             if(!(['admin', 'report'].includes(result.role))) {
@@ -557,86 +475,18 @@ module.exports = function (app) {
             if(data.port && me.port!==data.port) return res.send({'message': `This user can only assign to port ${me.port}.`})
         }
 
-        if(data.password){
-            if(data.password != data.confirmPassword) return res.status(403).send({'message': 'comfirmPassword not match.'})
-            data.password = await passwordLib.hash(data.password)
-        }
-        const body = generalLib.omit(data, 'confirmPassword')     
-    
-        // Request Updata to central
-        const updateUser = await axios.post(config.centralUrl+`users/update/${req.params.id}`, body)
-        // Add activity 
-        if(updateUser && updateUser.data.data != undefined){
-            const actData = updateUser.data.data
-            actData.logined_at = generalLib.formatDateTime(actData.logined_at)
-            actData.created_at = generalLib.formatDateTime(actData.created_at)
-            actData.updated_at = generalLib.formatDateTime(actData.updated_at)
-            actData.logout_at = generalLib.formatDateTime(actData.logout_at)
-            const device = await deviceModel.get({select: 'port', filters: { 'device_id': deviceId }}) 
-            await activityLogModel.add({
-                id: generalLib.generateUUID(me.port),
-                uid: me.id, 
-                ip: generalLib.getIp(req), 
-                port: device.port, 
-                record_id: req.params.id,
-                ref_id: actData.username,
-                device_id: deviceId,
-                record_type: 'users', 
-                action: 'edit', 
-                data: JSON.stringify(actData)
-            })
-            return res.status(201).send({'message': 'Updated successfully'})
-        } 
-
-        const status = updateUser.data.status
-        if(status == 422) return res.status(422).send({'message': updateUser.data.message})
-        if(status == 403) return res.status(403).send({'message': updateUser.data.message})
-        res.send({'message': 'Updated successfully'})
-    })
-
-    // Get a User
-    app.get('/settings/users/:id', async (req, res ) => {
-        const me = req.me    
-        let data = null
-        const filters = { uid: req.params.id }
-    
-        if(!generalLib.uuidValidate(req.params.id)) return res.status(422).send({'message': 'params uuid invalid.'})
-        
-        if(['report', 'staff'].includes(me.role)) return res.status(422).status(403).send({'message': `Role ${me.role} can not get a user.`})
-
-        if(result = await userModel.get({select: 'bin_to_uuid(uid) as uid, name, username, sex, phone, email, role, port, banned, banned_reason, permissions', filters: filters})){
-            data = result
-        } 
-        
-        res.send({'data': data})
-    })
-
-    // Banned a User
-    app.patch('/settings/banned/:id', async (req, res) => {
-        const body = req.body
-        const me = req.me
-        const filters = { uid: req.params.id }
-        const deviceId = req.headers['device-id'] != undefined && req.headers['device-id'] ? req.headers['device-id'] : null
-
-        if(['report', 'staff'].includes(me.role)) return res.status(403).send({'message': `Role ${me.role} can not do this action.`})
-    
-        if(!generalLib.uuidValidate(req.params.id)) return res.status(422).send({'message': 'params uuid invalid.'})
-
-        if(user = await userModel.get({select: '*, bin_to_uuid(uid) as uid',filters: filters})){
-            const dataBanned = {}
-            let statusMsg = 'Banned'
-            if(body){
-                if(body.banned_reason && body.banned_reason.length) dataBanned.banned_reason = req.body.banned_reason 
-                if(body.banned && body.banned.length){
-                    dataBanned.banned = req.body.banned
-                    if(body.banned == 0) {
-                        statusMsg= 'Unbanned'
-                        dataBanned.banned_reason = null
-                    }
-                } 
+        try {
+            const user = await userModel.get({select: 'username, port, role', filters: { uid: req.params.id}})
+            if(!user) return res.status(403).send({'message':'User not found'})
+            if(data.username != result.username){
+                if(exist = await userModel.get({filters: {'username': data.username}})) return res.status(403).send({'message':'Username already exist'})
             }
-            const updateUser = await axios.post(config.centralUrl+`users/update/${req.params.id}`, dataBanned)
-            // Add activity 
+            if(data.password){
+                if(data.password != data.confirmPassword) return res.status(403).send({'message': 'comfirmPassword not match.'})
+                data.password = await passwordLib.hash(data.password)
+            }
+            const body = generalLib.omit(data, 'confirmPassword')   
+            const updateUser = await axios.post(config.centralUrl+`users/update/${req.params.id}`, body)
             if(updateUser && updateUser.data.data != undefined){
                 const actData = updateUser.data.data
                 actData.logined_at = generalLib.formatDateTime(actData.logined_at)
@@ -656,12 +506,84 @@ module.exports = function (app) {
                     action: 'edit', 
                     data: JSON.stringify(actData)
                 })
-                const status = updateUser.data.status
-                if(status == 422) return res.status(422).send({'message': updateUser.data.message})
-                if(status == 403) return res.status(403).send({'message': updateUser.data.message})
-                return res.send({'message': `${statusMsg} success`})
+                return res.status(201).send({'message': 'Updated successfully'})
             } 
+            
+        } catch (error) {
+            if(error.code == 'ECONNREFUSED') return res.status(502).send({'code': error.code ,'address': error.address, 'message': `Can not request to this address ${error.address}:${error.port}`}) // if connection to central server error.
+            if(error.response && error.response.status == 422) return res.status(422).send({'code': error.response.data.code , 'sql': error.response.data.sql ,'message': error.response.data.sqlMessage}) // if catch error while add record central server.
+            return res.status(422).send({'code': error.code , 'sql': error.sql, 'message': error.sqlMessage}) // if catch error while add record in local.
         }
-        return res.status(404).send({'message': 'User Not Found'})
+    })
+
+    // Get a User
+    app.get('/settings/users/:id', async (req, res ) => {
+        const me = req.me    
+        let data = null
+        const filters = { uid: req.params.id }
+        if(!generalLib.uuidValidate(req.params.id)) return res.status(422).send({'message': 'params uuid invalid.'})
+        if(['report', 'staff'].includes(me.role)) return res.status(422).status(403).send({'message': `Role ${me.role} can not get a user.`})
+        try {
+            if(result = await userModel.get({select: 'bin_to_uuid(uid) as uid, name, username, sex, phone, email, role, port, banned, banned_reason, permissions', filters: filters})){
+                data = result
+            } 
+            res.send({'data': data})
+        } catch (error) {
+            return res.status(422).send({'code': error.code , 'sql': error.sql, 'message': error.sqlMessage})
+        }
+    })
+
+    // Banned a User
+    app.patch('/settings/banned/:id', async (req, res) => {
+        const body = req.body
+        const me = req.me
+        const filters = { uid: req.params.id }
+        const deviceId = req.headers['device-id'] != undefined && req.headers['device-id'] ? req.headers['device-id'] : null
+        if(['report', 'staff'].includes(me.role)) return res.status(403).send({'message': `Role ${me.role} can not do this action.`})
+        if(!generalLib.uuidValidate(req.params.id)) return res.status(422).send({'message': 'params uuid invalid.'})
+        try {
+            const user = await userModel.get({select: '*, bin_to_uuid(uid) as uid',filters: filters})
+            if(user){
+                const dataBanned = {}
+                let statusMsg = 'Banned'
+                if(body){
+                    if(body.banned_reason && body.banned_reason.length) dataBanned.banned_reason = req.body.banned_reason 
+                    if(body.banned && body.banned.length){
+                        dataBanned.banned = req.body.banned
+                        if(body.banned == 0) {
+                            statusMsg= 'Unbanned'
+                            dataBanned.banned_reason = null
+                        }
+                    } 
+                }
+                const updateUser = await axios.post(config.centralUrl+`users/update/${req.params.id}`, dataBanned)
+                if(updateUser && updateUser.data.data != undefined){
+                    const actData = updateUser.data.data
+                    actData.logined_at = generalLib.formatDateTime(actData.logined_at)
+                    actData.created_at = generalLib.formatDateTime(actData.created_at)
+                    actData.updated_at = generalLib.formatDateTime(actData.updated_at)
+                    actData.logout_at = generalLib.formatDateTime(actData.logout_at)
+                    const device = await deviceModel.get({select: 'port', filters: { 'device_id': deviceId }}) 
+                    await activityLogModel.add({
+                        id: generalLib.generateUUID(me.port),
+                        uid: me.id, 
+                        ip: generalLib.getIp(req), 
+                        port: device.port, 
+                        record_id: req.params.id,
+                        ref_id: actData.username,
+                        device_id: deviceId,
+                        record_type: 'users', 
+                        action: 'edit', 
+                        data: JSON.stringify(actData)
+                    })
+                    return res.send({'message': `${statusMsg} successfully`})
+                } 
+            }
+            if(!user) return res.status(404).send({'message': 'User Not Found'})
+        } catch (error) {
+            if(error.code == 'ECONNREFUSED') return res.status(502).send({'code': error.code ,'address': error.address, 'message': `Can not request to this address ${error.address}:${error.port}`}) // if connection to central server error.
+            if(error.response && error.response.status == 422) return res.status(422).send({'code': error.response.data.code , 'sql': error.response.data.sql ,'message': error.response.data.sqlMessage}) // if catch error while add record central server.
+            return res.status(422).send({'code': error.code , 'sql': error.sql, 'message': error.sqlMessage}) // if catch error while add record in local.
+        }
     })
 }

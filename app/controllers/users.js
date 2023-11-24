@@ -33,23 +33,16 @@ module.exports = function(app){
         }
     })
 
-
-
-
-
     app.post('/users/update/:id', async (req, res) => {
         const id = req.params.id
         const userData = req.body  
-
         try {
             if(await userModel.update(id, userData)){
                 const user =  await userModel.get({select: 'bin_to_uuid(uid) as uid,username, name, phone, sex, email, permissions, port, photo, banned, role, banned_reason, logined_at,logout_at,last_ip,	updated_at, created_at', filters: {'uid': id }})
                 return res.status(200).send({'data': user })
             }
-            return res.status(200).send({'status': 403, 'message': 'update user fail.'})
         } catch (error) {
-            // console.log(error)
-            return res.status(200).send({'status': 403, 'message': 'update user fail.'})
+            return res.status(422).send({'code': error.code , 'sql': error.sql, 'sqlMessage': error.sqlMessage})
         }
     })
 }
