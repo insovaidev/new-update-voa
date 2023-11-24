@@ -5,8 +5,8 @@ module.exports = function(app){
     app.post('/users/create', async (req, res) => {
         const body = req.body
 
-        if(exist = await userModel.get({select:'username', filters: { username: body.username }})) {
-            return res.status(200).send({'status': 422, 'message': 'username already exist.'})
+        if(exist = await userModel.get({select:'username', filters: { 'username': body.username }})) {
+            return res.status(200).send({'status': 422, 'message': 'Username already exist.'})
         } 
         
         const userData = {

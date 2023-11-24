@@ -21,12 +21,14 @@ module.exports = function (app) {
     
     // History Lists
     app.get('/settings/histories', async ( req, res ) => {
+        const me = req.me
         let data = []
         let total = 0
         let report_time_zone = 0
-        let filters = Object.assign({}, req.query) 
+        const filters = Object.assign({}, req.query) 
+        // defualt filters
         filters.limit = 30
-        const me = req.me
+        filters.offset = 0
 
         if(me.port) {
             filters.port = me.port
@@ -48,157 +50,162 @@ module.exports = function (app) {
             }
         }
 
-        if(offset = req.query.offset) {
-            filters.offset = offset 
-        } else {
-            filters.offset = 0
-        }
-
+        if(offset = req.query.offset) filters.offset = offset 
+      
         const select = 'bin_to_uuid(a.id) id, bin_to_uuid(a.uid) as uid, a.description, a.record_type, a.action, a.port, a.created_at, bin_to_uuid(a.record_id) as record_id, u.username'
         
-        if(result=await activityLogModel.list({select: select, filters:filters})){
-            result.forEach(val => {
-                data.push({
-                    'id': val.id,
-                    'user_id': val.uid,
-                    'record_id': val.record_id,
-                    'username': val.username,
-                    'description': val.description,   
-                    'record_type': val.record_type,
-                    'action': val.action,
-                    'port': val.port, 
-                    'created_at': generalLib.formatDateTime(val.created_at),
+        try {
+            let result = await activityLogModel.list({select: select, filters:filters})
+            if(result){
+                result.forEach(val => {
+                    data.push({
+                        'id': val.id,
+                        'user_id': val.uid,
+                        'record_id': val.record_id,
+                        'username': val.username,
+                        'description': val.description,   
+                        'record_type': val.record_type,
+                        'action': val.action,
+                        'port': val.port, 
+                        'created_at': generalLib.formatDateTime(val.created_at),
+                    })
                 })
-            })
+            }
+            let result_total = await activityLogModel.gets({ filters: filters})
+            console.log(result_total)
+            if(result_total) total = result_total[0].total
+            return res.send({ 'total': total, 'limit': 30 , 'offset': parseInt(filters.offset), 'data': data.length > 0 ? data : null })
+        } catch (error) {
+            return res.status(422).send({'code': error.code , 'sql': error.sql,'message': error.sqlMessage})
         }
-
-        if(result = await activityLogModel.gets({ filters: filters})){
-            total = result[0].total
-        }
-        res.send({ 'total': total, 'limit': 30 , 'offset': parseInt(filters.offset), 'data': data.length > 0 ? data : null })
     })
 
     // Get a History
     app.get('/settings/histories/:id', async ( req, res ) => {
+        const id = req.params.id
         let data = null
         let response = {}
         let select = 'a.data, a.record_type, a.port, a.action, bin_to_uuid(a.uid) as uid, a.created_at, a.description'
-        var filters = { id: req.params.id }
 
         if(!generalLib.uuidValidate(req.params.id)) return res.status(422).send({'message': 'params uuid invalid.'})  
 
-        // Get an Act
-        if(act=await activityLogModel.list({select: select, filters: filters})){ 
-            data=JSON.parse(act[0].data)    
-
-           if(act[0].record_type=='users'){
-                // Auth Action
-                if(act[0].action=='login' || act[0].action=='logout'){
-                    const owner = await userModel.get({select: '*', filters: {uid: act[0].uid}})
-                    response.username=owner.username
-                    if(act[0].port){
-                        const port=await portModel.get(act[0].port, 'code')
-                        response.port={
-                            'code': port.code,
-                            'name_km': port.name_km
+        try {
+            let act = await activityLogModel.list({select: select, filters: {'id': id}})
+            if(act){
+                data=JSON.parse(act[0].data)    
+                if(act[0].record_type=='users'){
+                    // Auth Action
+                    if(act[0].action=='login' || act[0].action=='logout'){
+                        const owner = await userModel.get({select: '*', filters: {uid: act[0].uid}})
+                        response.username=owner.username
+                        if(act[0].port){
+                            const port=await portModel.get(act[0].port, 'code')
+                            response.port={
+                                'code': port.code,
+                                'name_km': port.name_km
+                            }
                         }
+                        // response.port=act[0].port
+                        response.created_by=owner.username 
+                        response.sex=owner.sex
+                        response.role=owner.role
+                        response.created_at=generalLib.formatDateTime(owner.created_at) 
+                        response.permissions=owner.permissions
                     }
-                    // response.port=act[0].port
-                    response.created_by=owner.username 
-                    response.sex=owner.sex
-                    response.role=owner.role
-                    response.created_at=generalLib.formatDateTime(owner.created_at) 
-                    response.permissions=owner.permissions
-                }
 
-                // Use Settings
-                if(data){
-                    response.username=data.username
-                    if(act[0].port){
-                        const port=await portModel.get(act[0].port, 'code')
-                        response.port={
-                            'code': port.code,
-                            'name_km': port.name_km
+                    // Use Settings
+                    if(data){
+                        response.username=data.username
+                        if(act[0].port){
+                            const port=await portModel.get(act[0].port, 'code')
+                            response.port={
+                                'code': port.code,
+                                'name_km': port.name_km
+                            }
                         }
-                    }
-                    const owner = await userModel.get({select: 'username', filters: {uid: act[0].uid}})
-                    response.created_by=owner.username 
-                    response.sex=data.sex
-                    response.role=data.role
-                    response.created_at=generalLib.formatDateTime(data.created_at) 
-                    response.permissions=data.permissions
-                } 
-            }
-
-            // Passports
-            if(act[0].record_type=='passports'){
-                response.passport_no=data.passport_no
-                const visa = await visaModel.get(data.vid, 'vid')
-                if(visa_type=await visaTypeModel.get(visa.visa_type, 'type')){
-                    response.visa_type= {
-                        'type': visa_type.type,
-                        'entries': visa_type.entries,
-                        'duration': visa_type.duration,
-                        'duration_type': visa_type.duration_type
-                    }
-                }
-                response.given_name=data.given_name 
-                response.surname=data.surname 
-                response.sex=data.sex
-                if(data.nationality){
-                    const country = await countryModel.get(data.nationality, 'code')
-                    response.nationality= {
-                        'country': country.name ,
-                        'code': country.code
+                        const owner = await userModel.get({select: 'username', filters: {uid: act[0].uid}})
+                        response.created_by=owner.username 
+                        response.sex=data.sex
+                        response.role=data.role
+                        response.created_at=generalLib.formatDateTime(data.created_at) 
+                        response.permissions=data.permissions
                     } 
                 }
-                response.dob= generalLib.formatDate(data.dob) 
-                response.pob=data.pob 
-                response.profession=data.profession
-                response.email=data.contact
-                response.issued_date= generalLib.formatDate(data.issued_date) 
-                response.expire_date= generalLib.formatDate(data.expire_date) 
-                response.created_at= generalLib.formatDateTime(data.created_at) 
-                response.updated_at= generalLib.formatDateTime(data.updated_at) 
-                response.deleted_reason=data.deleted_reason
-            }
 
-            if(act[0].record_type=='visas'){
-                response.visa_no=data.visa_no
-                response.passport_no=data.passport_no
-                if(data.port){
-                    const port=await portModel.get(data.port, 'code')
-                    response.port={
-                        'code': port.code,
-                        'name_km': port.name_km
+                // Passports
+                if(act[0].record_type=='passports'){
+                    response.passport_no=data.passport_no
+                    const visa = await visaModel.get(data.vid, 'vid')
+                    if(visa_type=await visaTypeModel.get(visa.visa_type, 'type')){
+                        response.visa_type= {
+                            'type': visa_type.type,
+                            'entries': visa_type.entries,
+                            'duration': visa_type.duration,
+                            'duration_type': visa_type.duration_type
+                        }
                     }
+                    response.given_name=data.given_name 
+                    response.surname=data.surname 
+                    response.sex=data.sex
+                    if(data.nationality){
+                        const country = await countryModel.get(data.nationality, 'code')
+                        response.nationality= {
+                            'country': country.name ,
+                            'code': country.code
+                        } 
+                    }
+                    response.dob= generalLib.formatDate(data.dob) 
+                    response.pob=data.pob 
+                    response.profession=data.profession
+                    response.email=data.contact
+                    response.issued_date= generalLib.formatDate(data.issued_date) 
+                    response.expire_date= generalLib.formatDate(data.expire_date) 
+                    response.created_at= generalLib.formatDateTime(data.created_at) 
+                    response.updated_at= generalLib.formatDateTime(data.updated_at) 
+                    response.deleted_reason=data.deleted_reason
                 }
-                response.travel_from=data.travel_from
-                response.final_city=data.final_city
-                if(visa=await visaModel.get(data.vid, 'vid')){
-                    const visa_type = await visaTypeModel.get(visa.visa_type, 'type')
-                    response.visa_type = {
-                        'type': visa_type.type,
-                        'entries': visa_type.entries   
+                // Visas
+                if(act[0].record_type=='visas'){
+                    response.visa_no=data.visa_no
+                    response.passport_no=data.passport_no
+                    if(data.port){
+                        const port=await portModel.get(data.port, 'code')
+                        response.port={
+                            'code': port.code,
+                            'name_km': port.name_km
+                        }
                     }
-                    response.stay= {
-                        'duration': visa_type.duration,
-                        'duration_type': visa_type.duration_type,
+                    response.travel_from=data.travel_from
+                    response.final_city=data.final_city
+                    if(visa=await visaModel.get(data.vid, 'vid')){
+                        const visa_type = await visaTypeModel.get(visa.visa_type, 'type')
+                        response.visa_type = {
+                            'type': visa_type.type,
+                            'entries': visa_type.entries   
+                        }
+                        response.stay= {
+                            'duration': visa_type.duration,
+                            'duration_type': visa_type.duration_type,
+                        }
                     }
+                    // response.description=act.description
+                    response.permanent=data.address
+                    response.permanent=data.address
+                    response.address_in_cambodia=data.address_in_cambodia
+                    response.travel_purpose=data.travel_purpose
+                    response.created_at=generalLib.formatDateTime(data.created_at)
+                    response.updated_at= generalLib.formatDateTime(data.updated_at) 
+                    response.deleted_reason=data.deleted_reason  
                 }
-                // response.description=act.description
-                response.permanent=data.address
-                response.permanent=data.address
-                response.address_in_cambodia=data.address_in_cambodia
-                response.travel_purpose=data.travel_purpose
-                response.created_at=generalLib.formatDateTime(data.created_at)
-                response.updated_at= generalLib.formatDateTime(data.updated_at) 
-                response.deleted_reason=data.deleted_reason  
+                response.description=act[0].description
+                return res.send({'data': response})
             }
-            response.description=act[0].description      
+            return res.send({'message': 'Not found'})
+        } catch (error) {
+            return res.status(422).send({'code': error.code , 'sql': error.sql,'message': error.sqlMessage})
         }
-        res.send({'data': response})
     })
+
 
     // Add User
     app.post('/settings/users', [
@@ -223,6 +230,76 @@ module.exports = function (app) {
 
         // Role and Permission
         if (me.role == 'report' || me.role == 'staff' ) return res.status(403).send({'message': `Role ${me.role} can not add a user to the system.`})
+        if(['sub_admin', 'staff'].includes(data.role)){
+            if(!data.port) return res.status(403).send({'message': `Port is required for role ${data.role}.`})
+        } 
+
+        // Admin
+        if(me.role=='admin'){
+            if(['super_admin'].includes(data.role)) return res.status(403).send({'message': `Role ${me.role} can not assign user ${data.role}.`})
+            if(me.port == null ){
+                if(data.role == 'admin' && data.port == undefined) return res.status(403).send({'message': `Admin has no port can assign only admin has port.`})
+            }
+            if(me.port){
+                if(['admin'].includes(data.role)) return res.status(403).send({'message': `Role ${me.role} can not assign user ${data.role}.`})
+                if(data.role == 'report' && data.port == undefined) return res.status(403).send({'message': `Admin port ${me.port} can assign only report has port ${me.port}.`})
+            }
+        }
+
+        // Sub Admin
+        if(me.role=='sub_admin'){
+            if(['super_admin', 'admin', 'sub_admin'].includes(data.role)) return res.status(403).send({'message': `Role ${data.role} can not assign by ${me.role}.`})
+            if(me.port) data.port = me.port
+        }
+
+        try {
+            if(result=await userModel.get({select:'username', filters: { username: data.username }})) {
+                return res.status(403).send({'code': 'invalid_username', 'type': 'users', 'message': 'Sorry! The username you provid already exist.'})
+            } 
+
+            data.uid = generalLib.generateUUID(me.port)
+            data['password'] = await passwordLib.hash(data.password)
+            data.last_user_agent = req.headers["user-agent"]
+            data.last_ip = generalLib.getIp(req)
+            const body = generalLib.omit(data, 'confirmPassword')
+
+            const addUser = await axios.post(config.centralUrl+'users/create', body)
+            
+            console.log(addUser)
+
+            // Add activity 
+            if(addUser && addUser.data.data != undefined){
+                
+                // const actData = addUser.data.data
+                // actData.logined_at = generalLib.formatDateTime(actData.logined_at)
+                // actData.created_at = generalLib.formatDateTime(actData.created_at)
+                // actData.updated_at = generalLib.formatDateTime(actData.updated_at)
+                // actData.logout_at = generalLib.formatDateTime(actData.logout_at)
+                // const device = await deviceModel.get({select: 'port', filters: { 'device_id': deviceId }}) 
+                // await activityLogModel.add({
+                //     id: generalLib.generateUUID(me.port),
+                //     uid: me.id, 
+                //     ip: generalLib.getIp(req), 
+                //     port: device.port, 
+                //     record_id: data.uid,
+                //     ref_id: actData.username,
+                //     device_id: deviceId,
+                //     record_type: 'users', 
+                //     action: 'add', 
+                //     data: JSON.stringify(actData)
+                // })
+
+                return res.status(201).send({'message': 'success'})
+            } 
+            return res.status(201).send({'message': 'create user fail'})
+        } catch (error) {
+            return res.status(422).send({'code': error.code , 'sql': error.sql,'message': error.sqlMessage})
+        }
+
+
+        return 
+
+
         
         // Check Duplicate User
         if(result=await userModel.get({select:'username', filters: { username: data.username }})) {

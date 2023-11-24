@@ -27,3 +27,16 @@ WHERE role in ('report', 'staff', 'sub_admin');
 
 if(sub_admin) 
 WHERE (role = 'report' AND port IS NOT NULL) OR role = 'staff';
+
+
+## Update code 
+const filters = {
+    'sort': 'created_at',
+    'sort_value': 'DESC',
+    'port': 'PHN',
+    'action': 'login',
+    'record_type': 'users',
+    // 'id': '25bcdd5e-83d5-531a-8007-803cbe30ae93',
+    'record_id': '',
+    'uid': '',
+}
