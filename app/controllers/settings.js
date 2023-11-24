@@ -293,7 +293,7 @@ module.exports = function (app) {
             } 
         } catch (error) {
             console.log(error)
-            if(error.response && error.response.status == 422) return res.status(422).send({'code': error.response.data.code , 'sql': error.response.data.sql ,'message': error.response.data.message})
+            if(error.response && error.response.status == 422) return res.status(422).send({'code': error.response.data.code , 'sql': error.response.data.sql ,'message': error.response.data.sqlMessage})
             if(error.code == 'ECONNREFUSED') return res.status(502).send({'code': error.code ,'address': error.address, 'message': `Can not request to this address ${error.address}:${error.port}`})
             return res.status(422).send({'code': error.code , 'sql': error.sql,'message': error.sqlMessage})
         }
