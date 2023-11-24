@@ -30,7 +30,6 @@ module.exports = function(app){
             const user =  await userModel.get({select: 'bin_to_uuid(uid) as uid,username, name, phone, sex, email, permissions, port, photo, banned, role, banned_reason, logined_at,logout_at,last_ip,	updated_at, created_at', filters: {'uid': userData.uid }})
             return res.status(200).send({'data': user })
         } catch (error) {
-            console.log('server', error)
             return res.status(422).send({'code': error.code , 'sql': error.sql,'message': error.sqlMessage})
         }
     })
