@@ -265,11 +265,11 @@ module.exports = function (app) {
 
             const addUser = await axios.post(config.centralUrl+'users/create', body)
             
-            console.log(addUser)
+            console.log('dfxdfvsdfg', addUser)
 
             // Add activity 
             if(addUser && addUser.data.data != undefined){
-                
+
                 // const actData = addUser.data.data
                 // actData.logined_at = generalLib.formatDateTime(actData.logined_at)
                 // actData.created_at = generalLib.formatDateTime(actData.created_at)
@@ -293,6 +293,7 @@ module.exports = function (app) {
             } 
             return res.status(201).send({'message': 'create user fail'})
         } catch (error) {
+            if(error.code == 'ECONNREFUSED') return res.status(502).send({'code': error.code ,'address': error.address, 'message': `Can not request to this address ${error.address}`})
             return res.status(422).send({'code': error.code , 'sql': error.sql,'message': error.sqlMessage})
         }
 

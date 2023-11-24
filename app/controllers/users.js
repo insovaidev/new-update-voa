@@ -4,11 +4,6 @@ module.exports = function(app){
 
     app.post('/users/create', async (req, res) => {
         const body = req.body
-
-        if(exist = await userModel.get({select:'username', filters: { 'username': body.username }})) {
-            return res.status(200).send({'status': 422, 'message': 'Username already exist.'})
-        } 
-        
         const userData = {
             'uid': body.uid,
             'name': body.name,
@@ -30,6 +25,8 @@ module.exports = function(app){
         }
         
         try {
+            if(exist = await userModel.get({select:'username', filters: { 'username': body.username }})) return res.status(200).send({'status': 422, 'message': 'Username already exist.'})
+            
             await userModel.add(userData)
             const user =  await userModel.get({select: 'bin_to_uuid(uid) as uid,username, name, phone, sex, email, permissions, port, photo, banned, role, banned_reason, logined_at,logout_at,last_ip,	updated_at, created_at', filters: {'uid': userData.uid }})
             return res.status(200).send({'data': user })
@@ -41,8 +38,7 @@ module.exports = function(app){
 
     app.post('/users/update/:id', async (req, res) => {
         const id = req.params.id
-        const body = req.body
-        const userData = body  
+        const userData = req.body  
 
         try {
             if(await userModel.update(id, userData)){
