@@ -291,9 +291,10 @@ module.exports = function (app) {
 
                 return res.status(201).send({'message': 'success'})
             } 
-            return res.status(201).send({'message': 'create user fail'})
+            // return res.status(201).send({'message': 'create user fail'})
         } catch (error) {
-            if(error.code == 'ECONNREFUSED') return res.status(502).send({'code': error.code ,'address': error.address, 'message': `Can not request to this address ${error.address}`})
+            console.log(error)
+            if(error.code == 'ECONNREFUSED') return res.status(502).send({'code': error.code ,'address': error.address, 'message': `Can not request to this address ${error.address}:${error.port}`})
             return res.status(422).send({'code': error.code , 'sql': error.sql,'message': error.sqlMessage})
         }
 
