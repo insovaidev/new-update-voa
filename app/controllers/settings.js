@@ -294,23 +294,18 @@ module.exports = function (app) {
 
     // Users Lists
     app.get('/settings/users', async (req, res) => {
-        var total = 0
+        let total = 0
         let data = []
         const me = req.me
         const filters = Object.assign({}, req.query)
-
-        // Not Allowed
+        filters.limit = 30 
+        filters.offset = 0
+        const select = 'bin_to_uuid(uid) as uid, name, username, phone, email, sex, created_at, role, port, banned, banned_reason, permissions'        
         if(['report', 'staff'].includes(me.role)) return res.status(403).send({'message': `Role ${me.role} can not get users.`})
-        
-        var select = 'bin_to_uuid(uid) as uid, name, username, phone, email, sex, created_at, role, port, banned, banned_reason, permissions'
-        
-        // me.port = "PHN"
-        
         if(me.role=='admin'){
             if(me.port==null){
                 filters.admin_has_port = 0
             }
-
             if(me.port){
                 filters.admin_has_port = 1
                 filters.port = me.port    
@@ -322,35 +317,24 @@ module.exports = function (app) {
             filters.not_role = ['super_admin', 'admin', 'sub_admin']
         }
 
-        if(limit = req.query.limit){
-            filters.limit = limit 
-        }  else {
-            filters.limit = 30    
-        }
-
-        if(offset = req.query.offset) {
-            filters.offset = offset 
-        } else {
-            filters.offset = 0
-        }
-    
+        if(offset = req.query.offset) filters.offset = offset 
         if(filters && filters.uid){
             if(!generalLib.uuidValidate(filters.uid)) return res.status(422).send({'message': 'params uuid invalid.'})
         }
 
-        // List
-        if(result = await userModel.list({select: select, filters:filters})){
-            result.forEach(val => {
-                data.push({...val})
-            })
+        try {
+            if(result = await userModel.list({select: select, filters:filters})){
+                result.forEach(val => {
+                    data.push({...val})
+                })
+            }
+            if(total_result = await userModel.total({filters:filters})){
+                total = total_result[0].total
+            }
+            res.send({'total': total, 'limit': 30 , 'offset': parseInt(filters.offset),  'data': data.length > 0 ? data : null})
+        } catch (error) {
+            return res.status(422).send({'code': error.code , 'sql': error.sql, 'message': error.sqlMessage})
         }
-        
-        // Total
-        if(result=await userModel.total({filters:filters})){
-            total = result[0].total
-        }
-    
-        res.send({'total': total, 'limit': 30 , 'offset': parseInt(filters.offset),  'data': data.length > 0 ? data : null})
     })
 
     // Update User Profile 
@@ -362,13 +346,6 @@ module.exports = function (app) {
         let statusMsg = 'Updated successfully'
         const deviceId = req.headers['device-id'] != undefined && req.headers['device-id'] ? req.headers['device-id'] : null  
 
-        if(data.username){
-            if(result=await userModel.get({select: 'username', filters: { username: data.username }})){
-                return res.status(403).send({'message': `User name ${data.username} already exist.`})
-            } 
-            updateData.username=data.username
-        }
-        
         if(data){
             if(('email' in data)){
                 if(data.email !== ""){
@@ -387,50 +364,58 @@ module.exports = function (app) {
             if(data.name) updateData.name=data.name
             if(data.sex) updateData.sex=data.sex
         }
-        
-        if(data.old_password && data.password){
-            const user = await userModel.get({select:'password', filters: { uid: me.id }})
-            if(await passwordLib.compare(data.old_password, user.password) !== true) return res.status(422).send({'type':'user', 'code':'wrong_password' ,'message':lang.incorrectPassword, 'errors': {'password':{'message': 'old password incorrect.'}}})
-            if(data.password != data.confirmPassword) return res.status(403).send({'message': 'comfirmPassword not match.'})
-            updateData.password = await passwordLib.hash(data.password)
-            action = 'change_password'
-            statusMsg = 'Password change successfully' 
-        }
 
-        // Update User
-        if(await userModel.update(me.id, updateData)){
-            // Get User Just Updated & Add Log
-            if(user= await userModel.get({select:'bin_to_uuid(uid) as uid,name,username,sex,phone,email,role,permissions,port,photo,banned,banned_reason,logined_at,logout_at,last_ip,last_user_agent,created_at,updated_at', filters: {uid: me.id}})){
-                const data_json = generalLib.omit(user, 'password') 
-                data_json.logined_at = generalLib.formatDateTime(data_json.logined_at)
-                data_json.created_at = generalLib.formatDateTime(data_json.created_at)
-                data_json.updated_at = generalLib.formatDateTime(data_json.updated_at)
-                data_json.logout_at = generalLib.formatDateTime(data_json.logout_at)
-                if(!me.port) device = await deviceModel.get({select: 'port', filters: { 'device_id': deviceId }}) 
-
-                // add user_sync record
-                await userSyncModel.add({
-                    'id': user.uid,
-                    'status': 1,
-                    'created_at': generalLib.formatDateTime(user.created_at),
-                    'updated_at': generalLib.formatDateTime(user.updated_at),
-                })
-
-                await activityLogModel.add({
-                    id: generalLib.generateUUID(me.port),
-                    uid: me.id,
-                    ip: generalLib.getIp(req), 
-                    port: me.port ? me.port : device.port,
-                    record_id: me.id,
-                    ref_id: user.username, 
-                    device_id: deviceId,
-                    record_type: 'users', 
-                    action: action ? action :'edit',
-                    data: JSON.stringify(data_json)
-                }) 
+        try {
+            if(data.username){
+                if(exist = await userModel.get({select: 'username', filters: { username: data.username }})){
+                    return res.status(403).send({'message': `User name ${data.username} already exist.`})
+                } 
+                updateData.username=data.username
             }
+            if(data.old_password && data.password){
+                const user = await userModel.get({select:'password', filters: { uid: me.id }})
+                if(await passwordLib.compare(data.old_password, user.password) !== true) return res.status(422).send({'type':'user', 'code':'wrong_password' ,'message':lang.incorrectPassword, 'errors': {'password':{'message': 'old password incorrect.'}}})
+                if(data.password != data.confirmPassword) return res.status(403).send({'message': 'comfirmPassword not match.'})
+                updateData.password = await passwordLib.hash(data.password)
+                action = 'change_password'
+                statusMsg = 'Password change successfully' 
+            }
+            if(await userModel.update(me.id, updateData)){
+                // Get User Just Updated & Add Log
+                if(user= await userModel.get({select:'bin_to_uuid(uid) as uid,name,username,sex,phone,email,role,permissions,port,photo,banned,banned_reason,logined_at,logout_at,last_ip,last_user_agent,created_at,updated_at', filters: {uid: me.id}})){
+                    const data_json = generalLib.omit(user, 'password') 
+                    data_json.logined_at = generalLib.formatDateTime(data_json.logined_at)
+                    data_json.created_at = generalLib.formatDateTime(data_json.created_at)
+                    data_json.updated_at = generalLib.formatDateTime(data_json.updated_at)
+                    data_json.logout_at = generalLib.formatDateTime(data_json.logout_at)
+                    const device = await deviceModel.get({select: 'port', filters: { 'device_id': deviceId }}) 
+    
+                    // add user_sync record
+                    await userSyncModel.add({
+                        'id': user.uid,
+                        'status': 1,
+                        'created_at': generalLib.formatDateTime(user.created_at),
+                        'updated_at': generalLib.formatDateTime(user.updated_at),
+                    })
+    
+                    await activityLogModel.add({
+                        id: generalLib.generateUUID(me.port),
+                        uid: me.id,
+                        ip: generalLib.getIp(req), 
+                        port: device.port,
+                        record_id: me.id,
+                        ref_id: user.username, 
+                        device_id: deviceId,
+                        record_type: 'users', 
+                        action: action ? action :'edit',
+                        data: JSON.stringify(data_json)
+                    }) 
+                }
+            }
+            return res.send({'message': statusMsg })
+        } catch (error) {
+            return res.status(422).send({'code': error.code , 'sql': error.sql, 'message': error.sqlMessage})
         }
-        return res.send({'message': statusMsg })
     })
     
     // Update a User
