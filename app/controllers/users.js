@@ -8,6 +8,7 @@ module.exports = function(app){
         if(exist = await userModel.get({select:'username', filters: { username: body.username }})) {
             return res.status(200).send({'status': 422, 'message': 'username already exist.'})
         } 
+        
         const userData = {
             'uid': body.uid,
             'name': body.name,
