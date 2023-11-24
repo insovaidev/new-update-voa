@@ -15,7 +15,7 @@ module.exports = function(app){
             'permissions': body.permissions,
             'port': body.port,
             'photo': body.photo,
-            'banned1': body.banned,
+            'banned': body.banned,
             'banned_reason': body.banned_reason,
             'password':  body.password,
             'logined_at':  body.logined_at,
@@ -23,7 +23,6 @@ module.exports = function(app){
             'last_ip':  body.last_ip,
             'last_user_agent':  body.last_user_agent,
         }
-        
         try {
             if(exist = await userModel.get({select:'username', filters: { 'username': body.username }})) return res.status(200).send({'status': 422, 'message': 'Username already exist.'})
             const add = await userModel.add(userData)
