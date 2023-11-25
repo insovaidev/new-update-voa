@@ -331,7 +331,7 @@ module.exports = function (app) {
             if(total_result = await userModel.total({filters:filters})){
                 total = total_result[0].total
             }
-            res.send({'total': total, 'limit': 30 , 'offset': parseInt(filters.offset),  'data': data.length > 0 ? data : null})
+            return res.send({'total': total, 'limit': 30 , 'offset': parseInt(filters.offset),  'data': data.length > 0 ? data : null})
         } catch (error) {
             return res.status(422).send({'code': error.code , 'sql': error.sql, 'message': error.sqlMessage})
         }

@@ -49,7 +49,7 @@ module.exports = {
         this.filters(q, filters)
 
         // Sort
-        q.limit(30)
+        if(filters && filters.no_limit == 0) q.limit(30) // condition for list select that no limit 
         q.offset(filters && filters.offset != undefined ? filters.offset : 0)
         q.orderBy('created_at', filters && filters.sort_value != undefined ? filters.sort_value : 'desc')
 
