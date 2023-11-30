@@ -40,3 +40,4 @@ const filters = {
     'record_id': '',
     'uid': '',
 }
+

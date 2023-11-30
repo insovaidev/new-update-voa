@@ -58,115 +58,111 @@ module.exports = function(app) {
         // Role and Permission
         if(me.role == 'super_admin' || me.role == 'admin' ||  me.role == 'report') return res.status(403).send({'message': `Role ${me.role} is not allowed to check blacklist.`}) 
 
-        if ( me.role == 'staff'){
-            if(user = await userModel.get({ select: '*', filters: { uid: me.id } })) {
-                let perms=[]
-                if(!user.permissions) return res.status(403).send({'message':'Dont have permission to request data.'}) 
-                perms.push(...user.permissions.split(','));
-                if(!perms.includes('blacklist')) return res.status(403).send({'message':'Dont have permission to check blacklist.'})
+        try {
+            if(me.role == 'staff'){
+                if(user = await userModel.get({ select: '*', filters: { uid: me.id } })) {
+                    let perms=[]
+                    if(!user.permissions) return res.status(403).send({'message':'Dont have permission to request data.'}) 
+                    perms.push(...user.permissions.split(','));
+                    if(!perms.includes('blacklist')) return res.status(403).send({'message':'Dont have permission to check blacklist.'})
+                }
+            } 
+    
+            // Poassport Data
+            const data =  {
+                "passport_no":body.passport_no.toUpperCase(),
+                "surname": body.surname.toUpperCase(),
+                "given_name": body.given_name.toUpperCase(),
+                "sex": body.sex.toLowerCase(),
+                "dob": body.dob,
+                "expire_date": body.expire_date,
+                "nationality": body.nationality.toUpperCase(),
+                "issued_date": body.issued_date !=undefined && body.issued_date ? body.issued_date : null,
             }
-        } 
-
-        // Poassport Data
-        const data =  {
-            "passport_no":body.passport_no.toUpperCase(),
-            "surname": body.surname.toUpperCase(),
-            "given_name": body.given_name.toUpperCase(),
-            "sex": body.sex.toLowerCase(),
-            "dob": body.dob,
-            "expire_date": body.expire_date,
-            "nationality": body.nationality.toUpperCase(),
-            "issued_date": body.issued_date !=undefined && body.issued_date ? body.issued_date : null,
-        }
-
-        data.id = generalLib.generateUUID(me.port)
-        data.passport_id = data.nationality+'-'+data.passport_no
-        data.base_id = data.passport_id+'-'+me.port+'-'+timestamp
-        data.uid = me.id
-        data.port = me.port
-        
-        // Additional Fields
-        var additionalField = Object.assign({}, {})
-
-        // Attachments
-        if(attachments) {
-            additionalField.attachments = {}
-            if(attachments.photo != undefined && attachments.photo) {
-                if (!fileLib.exist(config.tmpDir+attachments.photo)) return res.status(422).send({'message':'Photo file not found.'})
-                additionalField.attachments.photo = attachments.photo
-            }  
-            if(attachments.passport != undefined && attachments.passport) {
-                if (!fileLib.exist(config.tmpDir+attachments.passport)) return res.status(422).send({'message':'Passport file not found.'})
-                additionalField.attachments.passport = attachments.passport
+    
+            data.id = generalLib.generateUUID(me.port)
+            data.passport_id = data.nationality+'-'+data.passport_no
+            data.base_id = data.passport_id+'-'+me.port+'-'+timestamp
+            data.uid = me.id
+            data.port = me.port
+            
+            // Additional Fields
+            var additionalField = Object.assign({}, {})
+    
+            // Attachments
+            if(attachments) {
+                additionalField.attachments = {}
+                if(attachments.photo != undefined && attachments.photo) {
+                    if (!fileLib.exist(config.tmpDir+attachments.photo)) return res.status(422).send({'message':'Photo file not found.'})
+                    additionalField.attachments.photo = attachments.photo
+                }  
+                if(attachments.passport != undefined && attachments.passport) {
+                    if (!fileLib.exist(config.tmpDir+attachments.passport)) return res.status(422).send({'message':'Passport file not found.'})
+                    additionalField.attachments.passport = attachments.passport
+                }
             }
-        }
-
-        // Additional Fields Update
-        if(additionalField){
-            if((Object.values(additionalField).length) > 0 ) data.data = JSON.stringify(additionalField)
-        }
-
-        // Add Checklist Record
-        await checklistModel.add(data)
-
-        // Setup data for checking in ALS
-        data.country_code = data.nationality
-        data.sex = data.sex == 'm' ? 'male' : 'female'
-        data.create_by_id = req.me.id
-        data.create_by_username = req.me.username
-        const dob = body.dob != undefined ? body.dob.split('-') : null
-        data.dob_yyyy = dob[0]
-        data.dob_mm = dob[1]
-        data.dob_dd = dob[2]
-        data.item_status = 2 // 1=three step, 2=quick form
-
-        // Get nationality name
-        if(country = await countryModel.get(data.country_code)) data.nationality = country.name
-
-        const portData = await portModel.get(me.port, 'code')
-
-        if(portData && portData.check_als=='1'){
-            const result = await alsLib.checkAlerlist(data)
-
-            // Update check result
+    
+            // Additional Fields Update
+            if(additionalField){
+                if((Object.values(additionalField).length) > 0 ) data.data = JSON.stringify(additionalField)
+            }
+    
+            // Add Checklist Record
+            await checklistModel.add(data)
+    
+            // Setup data for checking in ALS
+            data.country_code = data.nationality
+            data.sex = data.sex == 'm' ? 'male' : 'female'
+            data.create_by_id = req.me.id
+            data.create_by_username = req.me.username
+            const dob = body.dob != undefined ? body.dob.split('-') : null
+            data.dob_yyyy = dob[0]
+            data.dob_mm = dob[1]
+            data.dob_dd = dob[2]
+            data.item_status = 2 // 1=three step, 2=quick form
+    
+            // Get nationality name
+            if(country = await countryModel.get(data.country_code)) data.nationality = country.name
+    
+            const portData = await portModel.get(me.port, 'code')
+    
+            if(portData && portData.check_als=='1'){
+                const result = await alsLib.checkAlerlist(data)
+                // Update check result
+                const updateState = {
+                    'base_id': data.base_id ,
+                    'match_als': result.status,
+                    'status_code': result.status_code,
+                    'als_message': result.message,
+                    'als_response': result.response?JSON.stringify(result.response):null,
+                }
+                await checklistModel.update(data.id, updateState)
+                // Response Data
+                if(result.status == 'failed') return res.status(500).json({'code': result.status_code, 'type': 'check_blacklist', 'message': result.message})
+                return res.send({
+                    // 'id': data.id,
+                    'status': result.status,
+                    'state': 'completed',
+                    'message': result.message
+                })
+            }
+    
+            // Update State for port that no need check blacklist
             const updateState = {
-                'base_id': data.base_id ,
-                'match_als': result.status,
-                'status_code': result.status_code,
-                'als_message': result.message,
-                'als_response': result.response?JSON.stringify(result.response):null,
+                'match_als': 3,
+                'status_code': 1,
+                'als_response': null
             }
-
             await checklistModel.update(data.id, updateState)
-
-            // Response Data
-            if(result.status == 'failed') return res.status(500).json({'code': result.status_code, 'type': 'check_blacklist', 'message': result.message})
-
             return res.send({
                 // 'id': data.id,
-                'status': result.status,
+                'status': 0,
                 'state': 'completed',
-                'message': result.message
-            })
-
+                'message': 'Not check with ALS.'
+            })   
+        } catch (error) {
+            return res.status(422).send({'code': error.code , 'sql': error.sql, 'message': error.sqlMessage})
         }
-
-        // Update State for port that no need check blacklist
-        const updateState = {
-            'match_als': 3,
-            'status_code': 1,
-            'als_response': null
-        }
-
-        await checklistModel.update(data.id, updateState)
-
-        return res.send({
-            // 'id': data.id,
-            'status': 0,
-            'state': 'completed',
-            'message': 'Not check with ALS.'
-        })
-      
     })
 
     // Get checklists
@@ -196,52 +192,60 @@ module.exports = function(app) {
             filters.offset = 0
         }
 
-        if(result = await checklistModel.list({select: "bin_to_uuid(id) as id, bin_to_uuid(uid) as uid, passport_id, surname, given_name, match_als, sex, passport_no, port, nationality, issued_date, expire_date", filters: filters})){
-            var checklist = []
-            result.forEach(val => {
-                if(val.issued_date) val.issued_date = generalLib.formatDate(val.issued_date) 
-                if(val.expire_date) val.expire_date = generalLib.formatDate(val.expire_date) 
-                checklist.push({...val})
-            });
-            data = checklist
+        try {
+            if(result = await checklistModel.list({select: "bin_to_uuid(id) as id, bin_to_uuid(uid) as uid, passport_id, surname, given_name, match_als, sex, passport_no, port, nationality, issued_date, expire_date", filters: filters})){
+                var checklist = []
+                result.forEach(val => {
+                    if(val.issued_date) val.issued_date = generalLib.formatDate(val.issued_date) 
+                    if(val.expire_date) val.expire_date = generalLib.formatDate(val.expire_date) 
+                    checklist.push({...val})
+                });
+                data = checklist
+            }
+    
+            await Promise.all([
+                checklistModel.total().then(result => {
+                    if (result) total = result[0].total
+                }),
+                checklistModel.total({filters: {'match_als': '1'} }).then(result => {
+                    if (result) balcklist = result[0].total
+                }),
+    
+                checklistModel.total({filters: {'match_als': '0'} }).then(result => {
+                    if (result) no_balcklist = result[0].total
+                }),
+    
+                checklistModel.total({ filters: {'match_als': '3'} }).then(result => {
+                    if (result) not_check_with_als = result[0].total
+                }),
+            ])
+            const response = {
+                'balcklist': balcklist,
+                'no_balcklist': no_balcklist,
+                'not_check_with_als': not_check_with_als
+            }
+            return res.send({ 'total': total, 'limit': 30, 'offset': parseInt(filters.offset),  'data': data , ...response })
+        } catch (error) {
+            return res.status(422).send({'code': error.code , 'sql': error.sql, 'message': error.sqlMessage})
         }
-
-        await Promise.all([
-            checklistModel.total().then(result => {
-                if (result) total = result[0].total
-            }),
-            checklistModel.total({filters: {'match_als': '1'} }).then(result => {
-                if (result) balcklist = result[0].total
-            }),
-
-            checklistModel.total({filters: {'match_als': '0'} }).then(result => {
-                if (result) no_balcklist = result[0].total
-            }),
-
-            checklistModel.total({ filters: {'match_als': '3'} }).then(result => {
-                if (result) not_check_with_als = result[0].total
-            }),
-        ])
-        const response = {
-            'balcklist': balcklist,
-            'no_balcklist': no_balcklist,
-            'not_check_with_als': not_check_with_als
-        }
-        return res.send({ 'total': total, 'limit': 30, 'offset': parseInt(filters.offset),  'data': data , ...response })
     })
 
     app.get('/checklists/:id', async(req, res) => {
         var data = null 
         var id = req.params.id  
-        if(result = await checklistModel.get({select: "*, bin_to_uuid(id) as id, bin_to_uuid(uid) as uid",filters: {'id': id}})){
-            data = result
-            data.issued_date = generalLib.formatDate(result.issued_date)
-            data.expire_date = generalLib.formatDate(result.expire_date)
-            data.dob = generalLib.formatDate(result.dob)
-            data.updated_at = generalLib.formatDateTime(result.updated_at)
-            data.updated_at = generalLib.formatDateTime(result.updated_at)
-            delete data.data 
+        try {
+            if(result = await checklistModel.get({select: "*, bin_to_uuid(id) as id, bin_to_uuid(uid) as uid",filters: {'id': id}})){
+                data = result
+                data.issued_date = generalLib.formatDate(result.issued_date)
+                data.expire_date = generalLib.formatDate(result.expire_date)
+                data.dob = generalLib.formatDate(result.dob)
+                data.updated_at = generalLib.formatDateTime(result.updated_at)
+                data.updated_at = generalLib.formatDateTime(result.updated_at)
+                delete data.data 
+            }
+            return res.send({'data': data})
+        } catch (error) {
+            return res.status(422).send({'code': error.code , 'sql': error.sql, 'message': error.sqlMessage})
         }
-        res.send({'data': data})
     })
 }
