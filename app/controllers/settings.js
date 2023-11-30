@@ -72,7 +72,6 @@ module.exports = function (app) {
                 })
             }
             let result_total = await activityLogModel.gets({ filters: filters})
-            console.log(result_total)
             if(result_total) total = result_total[0].total
             return res.send({ 'total': total, 'limit': 30 , 'offset': parseInt(filters.offset), 'data': data.length > 0 ? data : null })
         } catch (error) {
