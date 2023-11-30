@@ -1,8 +1,6 @@
 const config = require('../config/config')
 const fileLib = require('../libraries/fileLib')
-const passwordLib = require('../libraries/passwordLib')
 let  formidable = require('formidable')
-const sizeOf = require('image-size')
 
 
 module.exports = function(app) {
