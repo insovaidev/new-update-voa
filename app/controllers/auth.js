@@ -27,15 +27,30 @@ module.exports = function(app) {
         
         const select = 'bin_to_uuid(uid) as uid, name, username, password, phone, role, email, permissions, port, banned, phone, banned_reason, logout_at, logined_at, last_ip, created_at, updated_at'
 
-        // Check Login Attempt
-        const attempts = await attemptModel.gets({select: 'created_at', filters: {'user': body.username}})
-        
-        if(attempts && attempts.length > 4){
-            var nowToLastAtt = new Date() - attempts[0]['created_at'] // Time from last attempt till now.
-            var waitTime = generalLib.millisToMinutesAndSeconds(300000 - nowToLastAtt) 
-            if(nowToLastAtt < 300000){
-                return res.status(403).send({'message': `Wait ${waitTime} bofore try login again!` })
-            } else {
+        try {
+            // Check Login Attempt
+            const attempts = await attemptModel.gets({select: 'created_at', filters: {'user': body.username}})
+            if(attempts && attempts.length > 4){
+                var nowToLastAtt = new Date() - attempts[0]['created_at'] // Time from last attempt till now.
+                var waitTime = generalLib.millisToMinutesAndSeconds(300000 - nowToLastAtt) 
+                if(nowToLastAtt < 300000){
+                    return res.status(403).send({'message': `Wait ${waitTime} bofore try login again!` })
+                } else {
+                    const data = {}
+                    data.id = generalLib.generateUUID()
+                    data.user = req.body.username,
+                    data.ip = generalLib.getIp(req)
+                    data.type = "login"
+                    data.user_agent = req.headers['user-agent']
+                    data.device_id = deviceId
+                    await attemptModel.add(data)
+                }
+            }
+            
+            // Check User
+            const user = await userModel.get({select: select, filters: {'username': body.username}})
+            if(!user) {
+                // Add Login Attempt
                 const data = {}
                 data.id = generalLib.generateUUID()
                 data.user = req.body.username,
@@ -44,88 +59,76 @@ module.exports = function(app) {
                 data.user_agent = req.headers['user-agent']
                 data.device_id = deviceId
                 await attemptModel.add(data)
+                return res.status(422).send({'type':'user', 'code':'no_found', 'message':lang.userNoFound, 'errors': {'username':{'message':lang.userNoFound}}})
             }
-        }
-        
-        // Check User
-        const user = await userModel.get({select: select, filters: {'username': body.username}})
-        if(!user) {
-            // Add Login Attempt
-            const data = {}
-            data.id = generalLib.generateUUID()
-            data.user = req.body.username,
-            data.ip = generalLib.getIp(req)
-            data.type = "login"
-            data.user_agent = req.headers['user-agent']
-            data.device_id = deviceId
-            await attemptModel.add(data)
-            return res.status(422).send({'type':'user', 'code':'no_found', 'message':lang.userNoFound, 'errors': {'username':{'message':lang.userNoFound}}})
-        }
-        if(user.banned == 1) return res.status(403).send({'type':'user', 'code':'banned', 'message': lang.userBanned})
+            if(user.banned == 1) return res.status(403).send({'type':'user', 'code':'banned', 'message': lang.userBanned})
 
-        // Check User and Device
-        if(user && user.port){ 
-            if(device && device.port != user.port) return res.status(403).send({'message': `User port ${user.port} and device port ${device.port} not match.`})
-        }
-        
-        // Check Password
-        if(await passwordLib.compare(body.password, user.password) !== true) {
+            // Check User and Device
+            if(user && user.port){ 
+                if(device && device.port != user.port) return res.status(403).send({'message': `User port ${user.port} and device port ${device.port} not match.`})
+            }
+            
+            // Check Password
+            if(await passwordLib.compare(body.password, user.password) !== true) {
 
-            // Add Login Attempt
-            const data = {}
-            data.id =  generalLib.generateUUID()
-            data.user = req.body.username
-            data.uid = user.uid
-            data.ip = generalLib.getIp(req)
-            data.type = "login"
-            data.user_agent = req.headers['user-agent']
-            data.device_id = deviceId
-            await attemptModel.add(data)
-            return res.status(422).send({'type':'user', 'code':'wrong_password' ,'message':lang.incorrectPassword, 'errors': {'password':{'message':lang.incorrectPassword}}})
-        }
-        
-        // Add activity 
-        const data = generalLib.loginInfo(user)
-        const data_json = generalLib.omit(user, 'password')             
-        data_json.logined_at = generalLib.formatDateTime(data_json.logined_at)
-        data_json.created_at = generalLib.formatDateTime(data_json.created_at)
-        data_json.updated_at = generalLib.formatDateTime(data_json.updated_at)
-        data_json.logout_at = generalLib.formatDateTime(data_json.logout_at)
+                // Add Login Attempt
+                const data = {}
+                data.id =  generalLib.generateUUID()
+                data.user = req.body.username
+                data.uid = user.uid
+                data.ip = generalLib.getIp(req)
+                data.type = "login"
+                data.user_agent = req.headers['user-agent']
+                data.device_id = deviceId
+                await attemptModel.add(data)
+                return res.status(422).send({'type':'user', 'code':'wrong_password' ,'message':lang.incorrectPassword, 'errors': {'password':{'message':lang.incorrectPassword}}})
+            }
+            
+            // Add activity 
+            const data = generalLib.loginInfo(user)
+            const data_json = generalLib.omit(user, 'password')             
+            data_json.logined_at = generalLib.formatDateTime(data_json.logined_at)
+            data_json.created_at = generalLib.formatDateTime(data_json.created_at)
+            data_json.updated_at = generalLib.formatDateTime(data_json.updated_at)
+            data_json.logout_at = generalLib.formatDateTime(data_json.logout_at)
 
 
-        // Check Port Is Published
-        if(result = await portModel.get(device.port, 'code')){
-            if(result.published != 1) return res.status(403).send({'message': `Port ${device.port} is not published.`})
-        }
+            // Check Port Is Published
+            if(result = await portModel.get(device.port, 'code')){
+                if(result.published != 1) return res.status(403).send({'message': `Port ${device.port} is not published.`})
+            }
 
-        const actBody = {}
-        actBody.id = generalLib.generateUUID()
-        actBody.port = device.port
-        actBody.uid = user.uid
-        actBody.ip = generalLib.getIp(req)
-        actBody.record_id = data.id
-        actBody.device_id = deviceId
-        actBody.ref_id = user.username 
-        actBody.action = "login"
-        actBody.record_type = "users"
-        if(user && user.port == null) actBody.port = device.port
-        
-        await activityLogModel.add(actBody)
-        
-        // Update last login
-        await userModel.update(user.uid, {'logined_at':generalLib.dateTime(), 'last_user_agent':req.headers['user-agent'], 'last_ip': generalLib.getIp(req)})
+            const actBody = {}
+            actBody.id = generalLib.generateUUID()
+            actBody.port = device.port
+            actBody.uid = user.uid
+            actBody.ip = generalLib.getIp(req)
+            actBody.record_id = data.id
+            actBody.device_id = deviceId
+            actBody.ref_id = user.username 
+            actBody.action = "login"
+            actBody.record_type = "users"
+            if(user && user.port == null) actBody.port = device.port
+            
+            await activityLogModel.add(actBody)
+            
+            // Update last login
+            await userModel.update(user.uid, {'logined_at':generalLib.dateTime(), 'last_user_agent':req.headers['user-agent'], 'last_ip': generalLib.getIp(req)})
 
-        // Generate token
-        const tokens = await tokenLib.generate(req, user, deviceId)
-        
-        // Delete User Attempts 
-        await attemptModel.delete({filters: { user: body.username}})
-        
-        // Update User in device table
-        await deviceModel.update(deviceId, {'uid': user.uid}, 'device_id')
-        
-        // Reaspone data
-        return res.send({'data':data, 'tokens':tokens})       
+            // Generate token
+            const tokens = await tokenLib.generate(req, user, deviceId)
+            
+            // Delete User Attempts 
+            await attemptModel.delete({filters: { user: body.username}})
+            
+            // Update User in device table
+            await deviceModel.update(deviceId, {'uid': user.uid}, 'device_id')
+            
+            // Reaspone data
+            return res.send({'data':data, 'tokens':tokens})
+        } catch (error) {
+            return res.status(422).send({'code': error.code , 'sql': error.sql, 'sqlMessage': error.sqlMessage})
+        }     
     })
 
     app.post('/auth/logout', async (req, res) => {
