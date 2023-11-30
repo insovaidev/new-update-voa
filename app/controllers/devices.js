@@ -14,17 +14,23 @@ module.exports = function(app) {
         body.ip=generalLib.getIp(req)
         body.status=1
 
-        if(body.device_id && body.port ){
-            const device = await deviceModel.get({filters: {'device_id': body.device_id}})
-            if(device) {
-                await deviceModel.update(body.device_id, body,'device_id')
-                return res.send({'message': 'update success'})
-            } 
-            body.id=generalLib.generateUUID(body.port)
-            await deviceModel.add(body)
-            return res.send({'message': 'success'})
-        }    
-        res.status(422).send({'message': 'Invalid request.'})
+        try {
+            if(body.device_id && body.port ){
+                const device = await deviceModel.get({filters: {'device_id': body.device_id}})
+                if(device) {
+                    await deviceModel.update(body.device_id, body,'device_id')
+                    return res.send({'message': 'update success'})
+                } 
+                body.id=generalLib.generateUUID(body.port)
+                await deviceModel.add(body)
+                return res.send({'message': 'success'})
+            }    
+            return res.status(422).send({'message': 'Invalid request.'})
+            
+        } catch (error) {
+            return res.status(422).send({'code': error.code , 'sql': error.sql, 'sqlMessage': error.sqlMessage})
+        }
+
     })
 
     app.patch('/devices/:id', async(req, res)    => {
